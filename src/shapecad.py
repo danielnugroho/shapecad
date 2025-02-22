@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "Daniel Adi Nugroho"
 __email__ = "dnugroho@gmail.com"
 __status__ = "Production"
@@ -10,6 +10,13 @@ __license__ = "GNU General Public License v3.0 (GPL-3.0)"
 
 # Version History
 # --------------
+
+# 1.0.1 (2023-10-25)
+# - Added warning text on the tool's capabilities and limitations
+# - Added support for reading coordinate system from Shapefile (PRJ file)
+# - Added support for reading projection information from DXF file header
+# - Warns the user if no projection information is found in the DXF file
+# - Attempts to save projection information as extended data (XDATA) in the DXF file
 
 # 1.0.0 (2023-10-25)
 # - Initial release
@@ -22,8 +29,8 @@ __license__ = "GNU General Public License v3.0 (GPL-3.0)"
 # - Preserves elevation (Z values) in 3D data
 
 """
-Geospatial File Converter
-========================
+Shapefile-CAD File Converter
+=============================
 
 This script provides functionality for converting geospatial data between SHP (Shapefile) and DXF (AutoCAD Drawing Exchange Format) formats. 
 It supports both 2D and 3D data, preserving elevation information where applicable. The application features a wizard-style GUI built with Tkinter, 
@@ -108,6 +115,8 @@ from tkinter import ttk, filedialog, messagebox
 import ezdxf
 from shapely.geometry import shape, Point, LineString, Polygon
 import shapefile
+import pyproj
+import os
 print("All libraries imported successfully.")  # Debug message
 
 class ConverterApp:
@@ -145,8 +154,30 @@ class ConverterApp:
     def create_tab1(self):
         tk.Label(self.tab1, text="Select Conversion Type").pack(pady=10)
         self.conversion_type = tk.StringVar(value="SHP to DXF")
-        tk.Radiobutton(self.tab1, text="SHP to DXF", variable=self.conversion_type, value="SHP to DXF", command=self.update_tab3).pack()
-        tk.Radiobutton(self.tab1, text="DXF to SHP", variable=self.conversion_type, value="DXF to SHP", command=self.update_tab3).pack()
+        
+        # Update both the third tab and the info label when the radio button is clicked
+        tk.Radiobutton(
+            self.tab1, 
+            text="SHP to DXF", 
+            variable=self.conversion_type, 
+            value="SHP to DXF", 
+            command=lambda: [self.update_tab3(), self.update_info_label()]
+        ).pack()
+        
+        tk.Radiobutton(
+            self.tab1, 
+            text="DXF to SHP", 
+            variable=self.conversion_type, 
+            value="DXF to SHP", 
+            command=lambda: [self.update_tab3(), self.update_info_label()]
+        ).pack()
+
+        # Information text based on the selected conversion type
+        self.info_label = tk.Label(self.tab1, text="", wraplength=400, justify=tk.LEFT)
+        self.info_label.pack(pady=10)
+
+        # Set initial text based on the default conversion type
+        self.update_info_label()
 
         # Next button for the first tab (centered at the bottom)
         button_frame = tk.Frame(self.tab1)
@@ -154,6 +185,14 @@ class ConverterApp:
 
         next_button = tk.Button(button_frame, text="Next", command=self.next_tab)
         next_button.pack()
+        
+    def update_info_label(self):
+        if self.conversion_type.get() == "SHP to DXF":
+            self.info_label.config(
+                    text="Shapefile to CAD conversion will be performed without any coordinate system transformation. Target file coordinate system will be the same as the source file."
+                )
+        else:
+            self.info_label.config(text="CAD files do not typically contain coordinate system information, in which case please select the assumed coordinate system manually.")
 
     def create_tab2(self):
         tk.Label(self.tab2, text="Select Source and Target Files").pack(pady=10)
@@ -317,22 +356,103 @@ class ConverterApp:
         doc = ezdxf.new(self.dxf_version.get())
         msp = doc.modelspace()
 
-        for shape_record in sf.shapeRecords():
-            geom = shape(shape_record.shape.__geo_interface__)
-            if geom.geom_type == "Polygon":
-                # Check if the geometry has Z values
-                if hasattr(geom, 'z'):
-                    points = list(zip(geom.exterior.coords.xy[0], geom.exterior.coords.xy[1], geom.exterior.coords.xy[2]))
+        # Extract projection information from the Shapefile
+        prj_file = self.source_file.replace(".shp", ".prj")
+        if os.path.exists(prj_file):
+            with open(prj_file, 'r') as f:
+                prj_text = f.read()
+            
+            # Parse the projection information using pyproj
+            try:
+                crs = pyproj.CRS.from_wkt(prj_text)
+                projcs = crs.name  # Get the coordinate system name
+                projzone = None
+                print(f"Projection: {projcs}")  # Debug message
+
+                # Extract MGA zone if it's an MGA coordinate system
+                if "MGA" in projcs:
+                    projzone_candidate = None
+                    for sep in [" ", "-", "_"]:
+                        candidate = projcs.split(sep)[-1]
+                        try:
+                            zone = int(candidate)
+                            if 50 <= zone <= 56:
+                                projzone_candidate = candidate
+                                break
+                        except ValueError:
+                            continue
+                    projzone = projzone_candidate
+                    print(f"Projection: {projcs}, Zone: {projzone}")  # Debug message
                 else:
-                    points = list(zip(geom.exterior.coords.xy[0], geom.exterior.coords.xy[1], [0] * len(geom.exterior.coords.xy[0])))  # Default Z = 0
-                msp.add_lwpolyline(points)
-            elif geom.geom_type == "LineString":
-                # Check if the geometry has Z values
-                if hasattr(geom, 'z'):
-                    points = list(zip(geom.coords.xy[0], geom.coords.xy[1], geom.coords.xy[2]))
-                else:
-                    points = list(zip(geom.coords.xy[0], geom.coords.xy[1], [0] * len(geom.coords.xy[0])))  # Default Z = 0
-                msp.add_lwpolyline(points)
+                    messagebox.showinfo(
+                        "Projection Info",
+                        f"Shapefile coordinate system is not in MGA (Map Grid Australia). Proceed with caution for use with CAD.",
+                    )
+
+                # Store projection information as extended data (XDATA)
+                xdata = {
+                    "PROJCS": projcs,
+                    "PROJZONE": projzone
+                }
+
+                # Application name for XDATA
+                app_name = "PROJECTION_INFO"
+
+                # Convert shapes to DXF entities and attach XDATA to each entity
+                for shape_record in sf.shapeRecords():
+                    geom = shape(shape_record.shape.__geo_interface__)
+                    if geom.geom_type == "Polygon":
+                        # Check if the geometry has Z values
+                        if hasattr(geom, 'z'):
+                            points = list(zip(geom.exterior.coords.xy[0], geom.exterior.coords.xy[1], geom.exterior.coords.xy[2]))
+                        else:
+                            points = list(zip(geom.exterior.coords.xy[0], geom.exterior.coords.xy[1], [0] * len(geom.exterior.coords.xy[0])))  # Default Z = 0
+                        entity = msp.add_lwpolyline(points)
+                    elif geom.geom_type == "LineString":
+                        # Check if the geometry has Z values
+                        if hasattr(geom, 'z'):
+                            points = list(zip(geom.coords.xy[0], geom.coords.xy[1], geom.coords.xy[2]))
+                        else:
+                            points = list(zip(geom.coords.xy[0], geom.coords.xy[1], [0] * len(geom.coords.xy[0])))  # Default Z = 0
+                        entity = msp.add_lwpolyline(points)
+                    elif geom.geom_type == "Point":
+                        # Check if the geometry has Z values
+                        if hasattr(geom, 'z'):
+                            point = (geom.x, geom.y, geom.z)
+                        else:
+                            point = (geom.x, geom.y, 0)  # Default Z = 0
+                        entity = msp.add_point(point)
+
+                    # Attach XDATA to the entity
+                    entity.set_xdata(app_name, [(1000, value) for key, value in xdata.items()])
+
+            except Exception as e:
+                print(f"Error parsing projection information: {e}")
+        else:
+            # If no .prj file is found, convert shapes without projection information
+            for shape_record in sf.shapeRecords():
+                geom = shape(shape_record.shape.__geo_interface__)
+                if geom.geom_type == "Polygon":
+                    # Check if the geometry has Z values
+                    if hasattr(geom, 'z'):
+                        points = list(zip(geom.exterior.coords.xy[0], geom.exterior.coords.xy[1], geom.exterior.coords.xy[2]))
+                    else:
+                        points = list(zip(geom.exterior.coords.xy[0], geom.exterior.coords.xy[1], [0] * len(geom.exterior.coords.xy[0])))  # Default Z = 0
+                    msp.add_lwpolyline(points)
+                elif geom.geom_type == "LineString":
+                    # Check if the geometry has Z values
+                    if hasattr(geom, 'z'):
+                        points = list(zip(geom.coords.xy[0], geom.coords.xy[1], geom.coords.xy[2]))
+                    else:
+                        points = list(zip(geom.coords.xy[0], geom.coords.xy[1], [0] * len(geom.coords.xy[0])))  # Default Z = 0
+                    msp.add_lwpolyline(points)
+                elif geom.geom_type == "Point":
+                    # Check if the geometry has Z values
+                    if hasattr(geom, 'z'):
+                        point = (geom.x, geom.y, geom.z)
+                    else:
+                        point = (geom.x, geom.y, 0)  # Default Z = 0
+                    msp.add_point(point)
 
         # Save the DXF file
         doc.saveas(self.target_file)
