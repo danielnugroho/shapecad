@@ -1,0 +1,8 @@
+python -m venv shapecad_env
+source shapecad_env/bin/activate  # or shapecad_e
+
+pip install ezdxf pyshp shapely
+
+python shapecad.py
+
+pyinstaller --noconsole --onefile --upx-dir=upx-5.0.0-win64 shapecad.py
