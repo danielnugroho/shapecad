@@ -1,62 +1,93 @@
-Shapefile-CAD File Converter
-=============================
+SHP ↔ DXF Converter
+==================
 
-This script provides functionality for converting geospatial data between SHP (Shapefile) and DXF (AutoCAD Drawing Exchange Format) formats. 
-It supports both 2D and 3D data, preserving elevation information where applicable. The application features a wizard-style GUI built with Tkinter, 
-making it user-friendly and intuitive.
+A graphical user interface for converting between ESRI Shapefile and AutoCAD DXF formats,
+with specialized support for Australian coordinate systems and automatic geometry detection.
 
 Purpose:
 --------
-- Convert SHP files to DXF format and vice versa
-- Preserve elevation (Z values) in 3D data
-- Provide a user-friendly GUI for file selection and conversion options
-- Support multiple DXF versions (R2010, R2013, R2018)
-- Allow selection of coordinate systems (MGA1994, MGA2020) and MGA zones (50 to 56)
-- Enable feature type selection (Point, Line, Polygon) for DXF to SHP conversion
+- Provide bidirectional conversion between SHP and DXF formats
+- Support Australian coordinate reference systems (GDA1994, GDA2020 MGA)
+- Automatically detect geometry types and coordinate systems
+- Handle multiple geometry types (Points, Lines, Polygons/Areas)
+- Provide real-time feedback on shapefile analysis
 
 Requirements:
 ------------
-- Python 3.8 or higher
+- Python 3.10 or higher
 - Required packages:
-  - tkinter: for the GUI
-  - ezdxf: for DXF file handling
-  - pyshp (shapefile): for SHP file handling
+  - tkinter: for GUI components
+  - geopandas: for spatial data handling
+  - ezdxf: for DXF file processing
   - shapely: for geometry operations
+  - logging: for error tracking and debugging
+  - pathlib: for path handling
+  - threading: for non-blocking operations
 
-Input Formats:
--------------
-1. SHP Files:
-   - Must contain valid geometry (points, lines, polygons)
-   - Supports 2D and 3D data
-   - Preserves attribute data (if applicable)
+Features:
+---------
+1. DXF to Shapefile Conversion:
+   - Support for DXF entity types: POINT, LINE, LWPOLYLINE, POLYLINE, CIRCLE
+   - Australian coordinate system assignment (GDA1994/GDA2020 MGA)
+   - Zone selection for MGA projections (Zones 50-56)
+   - Entity type filtering during conversion
 
-2. DXF Files:
-   - Supports entities such as points, lines, polylines, and polygons
-   - Preserves layers and other CAD properties
-   - Supports 2D and 3D data
+2. Shapefile to DXF Conversion:
+   - Automatic geometry type detection from shapefile
+   - Real-time coordinate reference system analysis
+   - Australian CRS recognition and validation
+   - Support for Point, LineString, and Polygon geometries
+   - Binary and ASCII DXF output formats
+
+3. Coordinate System Support:
+   - GDA1994 MGA Zones 50-56 (EPSG:28350-28356)
+   - GDA2020 MGA Zones 50-56 (EPSG:7850-7856)
+   - Geographic coordinate systems (EPSG:4283, EPSG:7844)
+   - Non-Australian CRS detection with warnings
+
+4. User Interface:
+   - Tabbed interface for different conversion directions
+   - Real-time shapefile analysis and CRS detection
+   - Progress indicators during conversion
+   - Comprehensive help and about information
+   - Detailed error messages and logging
 
 Usage:
 ------
-Run the script to launch the GUI:
-python shapecad.py
+1. Launch the application:
+   python shapecad4.py
 
-The GUI will guide you through the following steps:
-1. Select the conversion type (SHP to DXF or DXF to SHP)
-2. Choose the source and target files
-3. Set conversion options (DXF version, coordinate system, MGA zone, feature type)
-4. Execute the conversion
+2. DXF to Shapefile:
+   - Select input DXF file
+   - Choose output shapefile location
+   - Set coordinate system (datum and MGA zone)
+   - Select entity type to convert
+   - Execute conversion
 
-Output:
--------
-- Converted file in the selected format (SHP or DXF)
-- Preserves geometry, elevation, and attribute data (if applicable)
+3. Shapefile to DXF:
+   - Select input shapefile (automatic analysis will begin)
+   - Review detected geometry type and coordinate system
+   - Choose output DXF file location
+   - Set DXF format options
+   - Execute conversion
 
-Notes:
-------
-- The application is designed for geospatial data conversion and may not handle non-spatial CAD elements.
-- Ensure the input files are valid and contain supported geometry types.
-- For large files, the conversion process may take some time.
+Supported Entity Types:
+----------------------
+- Points: DXF POINT entities ↔ SHP Point/MultiPoint geometries
+- Lines: DXF LINE/LWPOLYLINE (open) ↔ SHP LineString/MultiLineString geometries
+- Polygons/Areas: DXF LWPOLYLINE (closed)/CIRCLE ↔ SHP Polygon/MultiPolygon geometries
 
-Acknowledgements:
-----------------
-- This script was written with the help of DeepSeek R1.
+Australian MGA Zone Coverage:
+----------------------------
+- Zone 50: Western Australia (west)    - Zone 54: Northern Territory, Queensland
+- Zone 51: Western Australia (east)    - Zone 55: New South Wales, Victoria, Tasmania
+- Zone 52: South Australia (west)      - Zone 56: New South Wales, Queensland (east)
+- Zone 53: South Australia (east)
+
+Technical Notes:
+---------------
+- DXF files do not contain coordinate reference system information
+- Always document the coordinate system used when sharing DXF files
+- Log files are created with pattern: converter_YYYYMMDD.log
+- All operations are performed in separate threads to prevent UI freezing
+- Comprehensive error handling and user feedback throughout
