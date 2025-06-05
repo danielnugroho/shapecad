@@ -162,6 +162,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 print("Tkinter imports finished.")
 import os, sys, datetime, threading, logging
+import platform, subprocess, datetime
 print("System imports finished.")
 from pathlib import Path
 print("Pathlib imports finished.")
@@ -954,80 +955,66 @@ class ConverterApp:
         self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Create individual tabs
-        self.create_dxf_to_shp_tab()
         self.create_shp_to_dxf_tab()
+        self.create_dxf_to_shp_tab()
         self.create_about_tab()
     
-    def create_dxf_to_shp_tab(self):
-        """Create the DXF to SHP conversion tab"""
-        # Create tab frame
-        self.dxf_to_shp_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.dxf_to_shp_tab, text="DXF → SHP")
+    def get_system_specs(self):
+        """
+        Get detailed system specifications including CPU and RAM info.
+        Returns a dictionary with system specifications.
+        """
+        specs = {}
         
-        # Main frame with padding
-        main_frame = ttk.Frame(self.dxf_to_shp_tab)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        try:
+            # First attempt: Try using psutil if available
+            import psutil
+            
+            # CPU Info
+            specs['processor'] = platform.processor()
+            specs['cpu_cores'] = psutil.cpu_count(logical=True)
+            specs['cpu_freq'] = f"{psutil.cpu_freq().max:.2f} MHz" if psutil.cpu_freq() else "Unknown"
+            
+            # RAM Info (convert to GB and round to 2 decimal places)
+            total_ram = psutil.virtual_memory().total
+            specs['ram'] = f"{total_ram / (1024**3):.2f} GB"
+            
+        except ImportError:
+            # Fallback for Windows: Use wmic commands
+            if platform.system() == 'Windows':
+                try:
+                    # Get CPU info
+                    cpu = subprocess.check_output('wmic cpu get name, maxclockspeed', shell=True).decode()
+                    cpu_lines = cpu.strip().split('\n')[1:]  # Skip header
+                    if cpu_lines:
+                        specs['processor'] = cpu_lines[0].strip()
+                    
+                    # Get logical processors count
+                    cpu_count = subprocess.check_output('wmic cpu get NumberOfLogicalProcessors', shell=True).decode()
+                    count_lines = cpu_count.strip().split('\n')[1:]
+                    if count_lines:
+                        specs['cpu_cores'] = count_lines[0].strip()
+                    
+                    # Get RAM info
+                    ram = subprocess.check_output('wmic computersystem get totalphysicalmemory', shell=True).decode()
+                    ram_lines = ram.strip().split('\n')[1:]
+                    if ram_lines:
+                        ram_bytes = int(ram_lines[0].strip())
+                        specs['ram'] = f"{ram_bytes / (1024**3):.2f} GB"
+                        
+                except:
+                    # If wmic fails, use basic info
+                    specs['processor'] = platform.processor()
+                    specs['cpu_cores'] = "Unknown"
+                    specs['ram'] = "Unknown"
+            else:
+                # For non-Windows systems, use basic info
+                specs['processor'] = platform.processor()
+                specs['cpu_cores'] = "Unknown"
+                specs['ram'] = "Unknown"
         
-        # Title
-        title_label = ttk.Label(main_frame, text="Convert DXF to Shapefile", style='Title.TLabel')
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 15))
-        
-        # Input file selection
-        ttk.Label(main_frame, text="Input DXF File:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-        self.dxf_input_entry = ttk.Entry(main_frame, width=35)
-        self.dxf_input_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Button(main_frame, text="Browse...", style='Browse.TButton',
-                  command=lambda: self.browse_input_file(self.dxf_input_entry, Config.DXF_FILETYPES)).grid(row=1, column=2, padx=5, pady=5)
-        
-        # Output file selection
-        ttk.Label(main_frame, text="Output SHP File:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
-        self.shp_output_entry = ttk.Entry(main_frame, width=35)
-        self.shp_output_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Button(main_frame, text="Browse...", style='Browse.TButton',
-                  command=lambda: self.browse_output_file(self.shp_output_entry, Config.SHP_FILETYPES)).grid(row=2, column=2, padx=5, pady=5)
-        
-        # Coordinate system settings
-        settings_frame = ttk.LabelFrame(main_frame, text="Coordinate System Settings", padding=10)
-        settings_frame.grid(row=3, column=0, columnspan=3, pady=10, sticky="ew")
-        
-        # Datum selection
-        ttk.Label(settings_frame, text="Datum:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
-        self.datum_var = tk.StringVar(value="GDA2020")  # Default to newer datum
-        datum_combo = ttk.Combobox(settings_frame, textvariable=self.datum_var, 
-                                  values=["GDA1994", "GDA2020"], state="readonly", width=15)
-        datum_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        
-        # Zone selection
-        ttk.Label(settings_frame, text="MGA Zone:").grid(row=0, column=2, padx=5, pady=5, sticky="e")
-        self.zone_var = tk.StringVar(value="55")  # Default to zone 55 (common for Melbourne/Sydney)
-        zone_combo = ttk.Combobox(settings_frame, textvariable=self.zone_var, 
-                                 values=Config.SUPPORTED_ZONES, state="readonly", width=10)
-        zone_combo.grid(row=0, column=3, padx=5, pady=5, sticky="w")
-        
-        # Entity type selection (still needed for DXF since it can contain mixed types)
-        ttk.Label(main_frame, text="Entity Type:").grid(row=4, column=0, padx=5, pady=5, sticky="e")
-        self.entity_type_var = tk.StringVar(value="Points")
-        entity_combo = ttk.Combobox(main_frame, textvariable=self.entity_type_var, 
-                                   values=Config.SUPPORTED_ENTITY_TYPES, state="readonly", width=20)
-        entity_combo.grid(row=4, column=1, padx=5, pady=5, sticky="w")
-        
-        # Info label
-        info_label = ttk.Label(main_frame, text="Select the type of DXF entities to convert", style='Info.TLabel')
-        info_label.grid(row=5, column=0, columnspan=3, pady=(0, 10))
-        
-        # Convert button and progress bar
-        self.dxf_convert_button = ttk.Button(main_frame, text="Convert", style='Convert.TButton',
-                                           command=self.convert_dxf_to_shp)
-        self.dxf_convert_button.grid(row=6, column=1, pady=10)
-        
-        self.dxf_progress = ttk.Progressbar(main_frame, length=300, mode="indeterminate")
-        self.dxf_progress.grid(row=7, column=0, columnspan=3, pady=5, sticky="ew")
-        
-        # Configure column weights for responsive layout
-        main_frame.columnconfigure(1, weight=1)
-        settings_frame.columnconfigure(1, weight=1)
-        settings_frame.columnconfigure(3, weight=1)
-    
+        return specs
+  
     def create_shp_to_dxf_tab(self):
         """Create the SHP to DXF conversion tab with auto-detection"""
         # Create tab frame
@@ -1130,7 +1117,77 @@ class ConverterApp:
         # Configure column weights for responsive layout
         main_frame.columnconfigure(1, weight=1)
         dxf_settings_frame.columnconfigure(1, weight=1)
-    
+
+    def create_dxf_to_shp_tab(self):
+        """Create the DXF to SHP conversion tab"""
+        # Create tab frame
+        self.dxf_to_shp_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.dxf_to_shp_tab, text="DXF → SHP")
+        
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dxf_to_shp_tab)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Title
+        title_label = ttk.Label(main_frame, text="Convert DXF to Shapefile", style='Title.TLabel')
+        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 15))
+        
+        # Input file selection
+        ttk.Label(main_frame, text="Input DXF File:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.dxf_input_entry = ttk.Entry(main_frame, width=35)
+        self.dxf_input_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(main_frame, text="Browse...", style='Browse.TButton',
+                  command=lambda: self.browse_input_file(self.dxf_input_entry, Config.DXF_FILETYPES)).grid(row=1, column=2, padx=5, pady=5)
+        
+        # Output file selection
+        ttk.Label(main_frame, text="Output SHP File:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        self.shp_output_entry = ttk.Entry(main_frame, width=35)
+        self.shp_output_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(main_frame, text="Browse...", style='Browse.TButton',
+                  command=lambda: self.browse_output_file(self.shp_output_entry, Config.SHP_FILETYPES)).grid(row=2, column=2, padx=5, pady=5)
+        
+        # Coordinate system settings
+        settings_frame = ttk.LabelFrame(main_frame, text="Coordinate System Settings", padding=10)
+        settings_frame.grid(row=3, column=0, columnspan=3, pady=10, sticky="ew")
+        
+        # Datum selection
+        ttk.Label(settings_frame, text="Datum:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        self.datum_var = tk.StringVar(value="GDA2020")  # Default to newer datum
+        datum_combo = ttk.Combobox(settings_frame, textvariable=self.datum_var, 
+                                  values=["GDA1994", "GDA2020"], state="readonly", width=15)
+        datum_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        # Zone selection
+        ttk.Label(settings_frame, text="MGA Zone:").grid(row=0, column=2, padx=5, pady=5, sticky="e")
+        self.zone_var = tk.StringVar(value="55")  # Default to zone 55 (common for Melbourne/Sydney)
+        zone_combo = ttk.Combobox(settings_frame, textvariable=self.zone_var, 
+                                 values=Config.SUPPORTED_ZONES, state="readonly", width=10)
+        zone_combo.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        
+        # Entity type selection (still needed for DXF since it can contain mixed types)
+        ttk.Label(main_frame, text="Entity Type:").grid(row=4, column=0, padx=5, pady=5, sticky="e")
+        self.entity_type_var = tk.StringVar(value="Points")
+        entity_combo = ttk.Combobox(main_frame, textvariable=self.entity_type_var, 
+                                   values=Config.SUPPORTED_ENTITY_TYPES, state="readonly", width=20)
+        entity_combo.grid(row=4, column=1, padx=5, pady=5, sticky="w")
+        
+        # Info label
+        info_label = ttk.Label(main_frame, text="Select the type of DXF entities to convert", style='Info.TLabel')
+        info_label.grid(row=5, column=0, columnspan=3, pady=(0, 10))
+        
+        # Convert button and progress bar
+        self.dxf_convert_button = ttk.Button(main_frame, text="Convert", style='Convert.TButton',
+                                           command=self.convert_dxf_to_shp)
+        self.dxf_convert_button.grid(row=6, column=1, pady=10)
+        
+        self.dxf_progress = ttk.Progressbar(main_frame, length=300, mode="indeterminate")
+        self.dxf_progress.grid(row=7, column=0, columnspan=3, pady=5, sticky="ew")
+        
+        # Configure column weights for responsive layout
+        main_frame.columnconfigure(1, weight=1)
+        settings_frame.columnconfigure(1, weight=1)
+        settings_frame.columnconfigure(3, weight=1)
+
     def create_about_tab(self):
         """Create the about/help tab with scrollable text"""
         self.about_tab = ttk.Frame(self.notebook)
@@ -1171,6 +1228,11 @@ class ConverterApp:
         # Configure grid weights so text widget expands
         text_frame.grid_rowconfigure(0, weight=1)
         text_frame.grid_columnconfigure(0, weight=1)
+
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+       
+        # Get system specifications
+        specs = self.get_system_specs()
         
         # Application info content
         app_info = f"""{Config.APP_TITLE}
@@ -1257,9 +1319,41 @@ For technical support or feature requests, please check the application
 log file for detailed information about conversion processes and any errors.
 
 ================================================================================
-DEVELOPED BY: Daniel Nugroho
-LAST UPDATED: June 2025
-================================================================================"""
+LICENSE AND COPYRIGHT:
+================================================================================
+
+Version: {__version__}
+{__copyright__}
+{__license__}
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+System Information:
+------------------
+OS: {platform.system()} {platform.version()}
+Architecture: {platform.machine()}
+Python Version: {sys.version.split()[0]}
+Running on: {platform.node()}
+Started on: {current_time}
+
+Hardware Information:
+------------------
+Processor: {specs.get('processor', 'Unknown')}
+Logical Processors: {specs.get('cpu_cores', 'Unknown')}
+Processor Speed: {specs.get('cpu_freq', 'Unknown')}
+Total RAM: {specs.get('ram', 'Unknown')}
+"""
         
         # Insert the text into the widget
         self.about_text.config(state=tk.NORMAL)  # Enable editing temporarily
